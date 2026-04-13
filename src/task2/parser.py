@@ -121,7 +121,7 @@ def download_and_parse(url, bulletin_date):
 
 
 def save_to_db(df, bulletin_date):
-    session = Session(engine)
+    session = Session()
 
     try:
         exists = session.query(SpimexTradingResults).filter_by(
@@ -174,7 +174,7 @@ if __name__ == '__main__':
         else:
             print(f'Пропускаем {item["date"]} — данные не найдены')
 
-    session = Session(engine)
+    session = Session()
     count = session.query(SpimexTradingResults).count()
     first = session.query(SpimexTradingResults).first()
     print(f'\nВсего записей в БД: {count}')
