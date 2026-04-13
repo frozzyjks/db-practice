@@ -129,7 +129,7 @@ def save_to_db(df, bulletin_date):
         ).first()
 
         if exists:
-            print(f'⏭️ Пропускаем {bulletin_date} — данные уже есть в БД')
+            print(f'Пропускаем {bulletin_date} — данные уже есть в БД')
             return
 
         records = []
@@ -150,11 +150,11 @@ def save_to_db(df, bulletin_date):
 
         session.bulk_save_objects(records)
         session.commit()
-        print(f'✅ Сохранено: {bulletin_date} — {len(records)} записей')
+        print(f'Сохранено: {bulletin_date} — {len(records)} записей')
 
     except Exception as e:
         session.rollback()
-        print(f'❌ Ошибка при сохранении {bulletin_date}: {e}')
+        print(f'Ошибка при сохранении {bulletin_date}: {e}')
 
     finally:
         session.close()
@@ -172,7 +172,7 @@ if __name__ == '__main__':
         if df is not None and not df.empty:
             save_to_db(df, item['date'])
         else:
-            print(f'⚠️ Пропускаем {item["date"]} — данные не найдены')
+            print(f'Пропускаем {item["date"]} — данные не найдены')
 
     session = Session(engine)
     count = session.query(SpimexTradingResults).count()
