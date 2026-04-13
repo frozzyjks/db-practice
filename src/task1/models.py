@@ -1,108 +1,109 @@
-from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, Date
-from sqlalchemy.orm import relationship
+from sqlalchemy import Integer, String, Numeric, ForeignKey, Date
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
+
 
 class Genre(Base):
     __tablename__ = 'genre'
 
-    genre_id = Column(Integer, primary_key=True, autoincrement=True)
-    name_genre = Column(String(100), nullable=False)
+    genre_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name_genre: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    books = relationship('Book', back_populates='genre')
+    books: Mapped[list["Book"]] = relationship(back_populates="genre")
 
 
 class Author(Base):
     __tablename__ = 'author'
 
-    author_id = Column(Integer, primary_key=True, autoincrement=True)
-    name_author = Column(String(150), nullable=False)
+    author_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name_author: Mapped[str] = mapped_column(String(150), nullable=False)
 
-    books = relationship('Book', back_populates='author')
+    books: Mapped[list["Book"]] = relationship(back_populates="author")
 
 
 class Book(Base):
     __tablename__ = 'book'
 
-    book_id = Column(Integer, primary_key=True, autoincrement=True)
-    title = Column(String(200), nullable=False)
-    price = Column(Numeric(10, 2), nullable=False)
-    amount = Column(Integer, nullable=False)
+    book_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    author_id = Column(Integer, ForeignKey('author.author_id'), nullable=False)
-    genre_id = Column(Integer, ForeignKey('genre.genre_id'), nullable=False)
+    author_id: Mapped[int] = mapped_column(ForeignKey('author.author_id'), nullable=False)
+    genre_id: Mapped[int] = mapped_column(ForeignKey('genre.genre_id'), nullable=False)
 
-    author = relationship('Author', back_populates='books')
-    genre = relationship('Genre', back_populates='books')
-    buy_books = relationship('BuyBook', back_populates='book')
+    author: Mapped["Author"] = relationship(back_populates="books")
+    genre: Mapped["Genre"] = relationship(back_populates="books")
+    buy_books: Mapped[list["BuyBook"]] = relationship(back_populates="book")
 
 
 class City(Base):
     __tablename__ = 'city'
 
-    city_id = Column(Integer, primary_key=True, autoincrement=True)
-    name_city = Column(String(100), nullable=False)
-    days_delivery = Column(Integer, nullable=False)
+    city_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name_city: Mapped[str] = mapped_column(String(100), nullable=False)
+    days_delivery: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    clients = relationship('Client', back_populates='city')
+    clients: Mapped[list["Client"]] = relationship(back_populates="city")
 
 
 class Client(Base):
     __tablename__ = 'client'
 
-    client_id = Column(Integer, primary_key=True, autoincrement=True)
-    name_client = Column(String(150), nullable=False)
-    email = Column(String(200), nullable=False)
+    client_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name_client: Mapped[str] = mapped_column(String(150), nullable=False)
+    email: Mapped[str] = mapped_column(String(200), nullable=False)
 
-    city_id = Column(Integer, ForeignKey('city.city_id'), nullable=False)
+    city_id: Mapped[int] = mapped_column(ForeignKey('city.city_id'), nullable=False)
 
-    city = relationship('City', back_populates='clients')
-    buys = relationship('Buy', back_populates='client')
+    city: Mapped["City"] = relationship(back_populates="clients")
+    buys: Mapped[list["Buy"]] = relationship(back_populates="client")
 
 
 class Buy(Base):
     __tablename__ = 'buy'
 
-    buy_id = Column(Integer, primary_key=True, autoincrement=True)
-    buy_description = Column(String(500), nullable=True)
+    buy_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    buy_description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    client_id = Column(Integer, ForeignKey('client.client_id'), nullable=False)
+    client_id: Mapped[int] = mapped_column(ForeignKey('client.client_id'), nullable=False)
 
-    client = relationship('Client', back_populates='buys')
-    buy_books = relationship('BuyBook', back_populates='buy')
-    buy_steps = relationship('BuyStep', back_populates='buy')
+    client: Mapped["Client"] = relationship(back_populates="buys")
+    buy_books: Mapped[list["BuyBook"]] = relationship(back_populates="buy")
+    buy_steps: Mapped[list["BuyStep"]] = relationship(back_populates="buy")
 
 
 class BuyBook(Base):
     __tablename__ = 'buy_book'
 
-    buy_book_id = Column(Integer, primary_key=True, autoincrement=True)
-    amount = Column(Integer, nullable=False)
+    buy_book_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    buy_id = Column(Integer, ForeignKey('buy.buy_id'), nullable=False)
-    book_id = Column(Integer, ForeignKey('book.book_id'), nullable=False)
+    buy_id: Mapped[int] = mapped_column(ForeignKey('buy.buy_id'), nullable=False)
+    book_id: Mapped[int] = mapped_column(ForeignKey('book.book_id'), nullable=False)
 
-    buy = relationship('Buy', back_populates='buy_books')
-    book = relationship('Book', back_populates='buy_books')
+    buy: Mapped["Buy"] = relationship(back_populates="buy_books")
+    book: Mapped["Book"] = relationship(back_populates="buy_books")
 
 
 class Step(Base):
     __tablename__ = 'step'
 
-    step_id = Column(Integer, primary_key=True, autoincrement=True)
-    name_step = Column(String(100), nullable=False)
+    step_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name_step: Mapped[str] = mapped_column(String(100), nullable=False)
 
-    buy_steps = relationship('BuyStep', back_populates='step')
+    buy_steps: Mapped[list["BuyStep"]] = relationship(back_populates="step")
 
 
 class BuyStep(Base):
     __tablename__ = 'buy_step'
 
-    buy_step_id = Column(Integer, primary_key=True, autoincrement=True)
-    date_step_beg = Column(Date, nullable=True)
-    date_step_end = Column(Date, nullable=True)
+    buy_step_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    date_step_beg: Mapped[Date | None] = mapped_column(Date, nullable=True)
+    date_step_end: Mapped[Date | None] = mapped_column(Date, nullable=True)
 
-    buy_id = Column(Integer, ForeignKey('buy.buy_id'), nullable=False)
-    step_id = Column(Integer, ForeignKey('step.step_id'), nullable=False)
+    buy_id: Mapped[int] = mapped_column(ForeignKey('buy.buy_id'), nullable=False)
+    step_id: Mapped[int] = mapped_column(ForeignKey('step.step_id'), nullable=False)
 
-    buy = relationship('Buy', back_populates='buy_steps')
-    step = relationship('Step', back_populates='buy_steps')
+    buy: Mapped["Buy"] = relationship(back_populates="buy_steps")
+    step: Mapped["Step"] = relationship(back_populates="buy_steps")
