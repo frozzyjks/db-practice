@@ -1,0 +1,34 @@
+services:
+  db:
+    image: postgres:15
+    container_name: spimex_db
+    restart: always
+    environment:
+      POSTGRES_DB: spimex_db
+      POSTGRES_USER: aqodocu
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aqodocu -d spimex_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  parser:
+    build: .
+    container_name: spimex_parser
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_NAME: spimex_db
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: aqodocu
+      DB_PASS: password
+
+volumes:
+  postgres_data:

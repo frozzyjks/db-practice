@@ -1,11 +1,23 @@
 import requests
 import pandas as pd
+import numpy as np
+import logging
+
 from bs4 import BeautifulSoup
 from datetime import datetime
 from io import BytesIO
 from sqlalchemy.orm import Session
-from database import engine
-from models import Base, SpimexTradingResults
+
+from src.task2.database import engine
+from src.task2.models import Base, SpimexTradingResults
+
+
+# =========================
+# ЛОГГИРОВАНИЕ (вместо print)
+# =========================
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 headers = {
     'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
@@ -14,13 +26,19 @@ headers = {
 }
 
 
-def get_bulletin_links(start_year=2023):
+# =========================
+# 1. ПОЛУЧЕНИЕ ССЫЛОК
+# =========================
+def get_bulletin_links(session, start_year=2023):
+    """
+    ИЗМЕНЕНИЕ:
+    session теперь передаётся извне (не создаётся внутри функции)
+    """
     base_url = 'https://spimex.com'
     page_url = 'https://spimex.com/markets/oil_products/trades/results/'
+
     links = []
     page = 1
-
-    session = requests.Session()
 
     while True:
         response = session.get(
@@ -28,11 +46,12 @@ def get_bulletin_links(start_year=2023):
             headers=headers,
             verify=False
         )
+
         soup = BeautifulSoup(response.text, 'html.parser')
 
         blocks = soup.find_all('div', class_='accordeon-inner__item')
         if not blocks:
-            print(f'Страница {page} пустая — останавливаемся')
+            logger.info(f'Страница {page} пустая — останавливаемся')
             break
 
         xls_items = soup.find_all('a', class_='xls')
@@ -42,9 +61,11 @@ def get_bulletin_links(start_year=2023):
         ]
 
         stop = False
+
         for item in xls_items:
             href = item.get('href')
             filename = href.split('/')[-1].split('?')[0]
+
             date_str = filename.replace('oil_xls_', '')[:8]
             bulletin_date = datetime.strptime(date_str, '%Y%m%d').date()
 
@@ -58,47 +79,75 @@ def get_bulletin_links(start_year=2023):
             })
 
         if stop:
-            print(f'Достигли {start_year} года — останавливаемся')
+            logger.info(f'Достигли {start_year} года — останавливаемся')
             break
 
-        print(f'Страница {page}: найдено XLS={len(xls_items)}, всего ссылок: {len(links)}')
+        logger.info(f'Страница {page}: найдено XLS={len(xls_items)}, всего ссылок: {len(links)}')
         page += 1
 
-    print(f'Всего найдено файлов: {len(links)}')
+    logger.info(f'Всего найдено файлов: {len(links)}')
     return links
 
 
-def download_and_parse(url, bulletin_date):
-    session = requests.Session()
+# =========================
+# 2. DOWNLOAD (отдельно)
+# =========================
+def download_file(session, url):
+    """
+    ИЗМЕНЕНИЕ:
+    вынесено отдельно → это IO-bound задача
+    """
     r = session.get(url, headers=headers, verify=False, allow_redirects=True)
 
     if r.status_code != 200:
-        print(f'Ошибка скачивания {url}: статус {r.status_code}')
+        logger.error(f'Ошибка скачивания {url}: статус {r.status_code}')
         return None
 
-    df = pd.read_excel(BytesIO(r.content), engine='xlrd', header=None)
+    return r.content
 
-    start_row = None
-    for i, row in df.iterrows():
-        if 'Единица измерения: Метрическая тонна' in str(row.values):
-            start_row = i
-            break
+
+# =========================
+# 3. PARSE (отдельно)
+# =========================
+def parse_file(content, bulletin_date):
+    """
+    ИЗМЕНЕНИЕ:
+    парсинг отделён → это CPU-bound задача
+    """
+
+    df = pd.read_excel(BytesIO(content), engine='xlrd', header=None)
+
+    # =========================
+    # ЗАМЕНА iterrows → numpy
+    # =========================
+    row_mask = df.astype(str).apply(
+        lambda row: row.str.contains('Единица измерения: Метрическая тонна', na=False).any(),
+        axis=1
+    )
+
+    indices = np.where(row_mask)[0]
+    start_row = indices[0] if len(indices) > 0 else None
 
     if start_row is None:
-        print(f'Таблица "Метрическая тонна" не найдена в файле за {bulletin_date}')
+        logger.warning(f'Таблица не найдена в файле за {bulletin_date}')
         return None
 
     header_row = start_row + 1
     data_start = start_row + 3
 
-    end_row = None
-    for i in range(data_start, len(df)):
-        if 'Итого' in str(df.iloc[i].values):
-            end_row = i
-            break
+    # =========================
+    # Поиск "Итого" (без iterrows)
+    # =========================
+    sub = df.iloc[data_start:].astype(str)
 
-    if end_row is None:
-        end_row = len(df)
+    end_mask = sub.apply(
+        lambda row: row.str.contains('Итого', na=False).any(),
+        axis=1
+    )
+
+    end_rows = np.where(end_mask)[0]
+
+    end_row = data_start + end_rows[0] if len(end_rows) > 0 else len(df)
 
     table = df.iloc[data_start:end_row].copy()
 
@@ -120,8 +169,11 @@ def download_and_parse(url, bulletin_date):
     return table
 
 
+# =========================
+# 4. СОХРАНЕНИЕ В БД
+# =========================
 def save_to_db(df, bulletin_date):
-    session = Session()
+    session = Session(engine)
 
     try:
         exists = session.query(SpimexTradingResults).filter_by(
@@ -129,55 +181,81 @@ def save_to_db(df, bulletin_date):
         ).first()
 
         if exists:
-            print(f'Пропускаем {bulletin_date} — данные уже есть в БД')
+            logger.info(f'Пропускаем {bulletin_date} — уже есть')
             return
 
+        # =========================
+        # МОЖНО оставить iterrows (не критично для БД)
+        # =========================
         records = []
         for _, row in df.iterrows():
             product_id = str(row['exchange_product_id']).strip()
+
             records.append(SpimexTradingResults(
-                exchange_product_id   = product_id,
-                exchange_product_name = str(row['exchange_product_name']).strip(),
-                oil_id                = product_id[:4],
-                delivery_basis_id     = product_id[4:7],
-                delivery_type_id      = product_id[-1],
-                delivery_basis_name   = str(row['delivery_basis_name']).strip(),
-                volume                = float(row['volume']),
-                total                 = float(row['total']),
-                count                 = int(row['count']),
-                date                  = bulletin_date,
+                exchange_product_id=product_id,
+                exchange_product_name=str(row['exchange_product_name']).strip(),
+                oil_id=product_id[:4],
+                delivery_basis_id=product_id[4:7],
+                delivery_type_id=product_id[-1],
+                delivery_basis_name=str(row['delivery_basis_name']).strip(),
+                volume=float(row['volume']),
+                total=float(row['total']),
+                count=int(row['count']),
+                date=bulletin_date,
             ))
 
         session.bulk_save_objects(records)
         session.commit()
-        print(f'Сохранено: {bulletin_date} — {len(records)} записей')
+
+        logger.info(f'Сохранено: {bulletin_date} — {len(records)} записей')
 
     except Exception as e:
         session.rollback()
-        print(f'Ошибка при сохранении {bulletin_date}: {e}')
+        logger.error(f'Ошибка при сохранении {bulletin_date}: {e}')
 
     finally:
         session.close()
 
 
+# =========================
+# MAIN
+# =========================
 if __name__ == '__main__':
     Base.metadata.create_all(engine)
 
-    links = get_bulletin_links(start_year=2023)
+    # =========================
+    # ЕДИНАЯ SESSION (важно)
+    # =========================
+    session = requests.Session()
+
+    links = get_bulletin_links(session, start_year=2023)
 
     for item in links:
-        print(f'Обрабатываем: {item["date"]} — {item["url"]}')
-        df = download_and_parse(item['url'], item['date'])
+        logger.info(f'Обрабатываем: {item["date"]} — {item["url"]}')
 
-        if df is not None and not df.empty:
-            save_to_db(df, item['date'])
+        content = download_file(session, item['url'])
+
+        if content:
+            df = parse_file(content, item['date'])
+
+            if df is not None and not df.empty:
+                save_to_db(df, item['date'])
+            else:
+                logger.warning(f'Пропускаем {item["date"]} — нет данных')
         else:
-            print(f'Пропускаем {item["date"]} — данные не найдены')
+            logger.error(f'Пропускаем {item["date"]} — ошибка скачивания')
 
-    session = Session()
-    count = session.query(SpimexTradingResults).count()
-    first = session.query(SpimexTradingResults).first()
-    print(f'\nВсего записей в БД: {count}')
+    # =========================
+    # Проверка
+    # =========================
+    db_session = Session(engine)
+
+    count = db_session.query(SpimexTradingResults).count()
+    first = db_session.query(SpimexTradingResults).first()
+
+    logger.info(f'Всего записей в БД: {count}')
+
     if first:
-        print(f'Первая запись: {first.exchange_product_id} — {first.date}')
-    session.close()
+        logger.info(f'Первая запись: {first.exchange_product_id} — {first.date}')
+
+    db_session.close()
