@@ -12,9 +12,6 @@ from src.task2.database import engine
 from src.task2.models import Base, SpimexTradingResults
 
 
-# =========================
-# ЛОГГИРОВАНИЕ (вместо print)
-# =========================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -26,14 +23,7 @@ headers = {
 }
 
 
-# =========================
-# 1. ПОЛУЧЕНИЕ ССЫЛОК
-# =========================
 def get_bulletin_links(session, start_year=2023):
-    """
-    ИЗМЕНЕНИЕ:
-    session теперь передаётся извне (не создаётся внутри функции)
-    """
     base_url = 'https://spimex.com'
     page_url = 'https://spimex.com/markets/oil_products/trades/results/'
 
@@ -89,14 +79,7 @@ def get_bulletin_links(session, start_year=2023):
     return links
 
 
-# =========================
-# 2. DOWNLOAD (отдельно)
-# =========================
 def download_file(session, url):
-    """
-    ИЗМЕНЕНИЕ:
-    вынесено отдельно → это IO-bound задача
-    """
     r = session.get(url, headers=headers, verify=False, allow_redirects=True)
 
     if r.status_code != 200:
@@ -106,20 +89,10 @@ def download_file(session, url):
     return r.content
 
 
-# =========================
-# 3. PARSE (отдельно)
-# =========================
 def parse_file(content, bulletin_date):
-    """
-    ИЗМЕНЕНИЕ:
-    парсинг отделён → это CPU-bound задача
-    """
 
     df = pd.read_excel(BytesIO(content), engine='xlrd', header=None)
 
-    # =========================
-    # ЗАМЕНА iterrows → numpy
-    # =========================
     row_mask = df.astype(str).apply(
         lambda row: row.str.contains('Единица измерения: Метрическая тонна', na=False).any(),
         axis=1
@@ -135,9 +108,6 @@ def parse_file(content, bulletin_date):
     header_row = start_row + 1
     data_start = start_row + 3
 
-    # =========================
-    # Поиск "Итого" (без iterrows)
-    # =========================
     sub = df.iloc[data_start:].astype(str)
 
     end_mask = sub.apply(
@@ -169,9 +139,6 @@ def parse_file(content, bulletin_date):
     return table
 
 
-# =========================
-# 4. СОХРАНЕНИЕ В БД
-# =========================
 def save_to_db(df, bulletin_date):
     session = Session(engine)
 
@@ -184,9 +151,6 @@ def save_to_db(df, bulletin_date):
             logger.info(f'Пропускаем {bulletin_date} — уже есть')
             return
 
-        # =========================
-        # МОЖНО оставить iterrows (не критично для БД)
-        # =========================
         records = []
         for _, row in df.iterrows():
             product_id = str(row['exchange_product_id']).strip()
@@ -217,15 +181,9 @@ def save_to_db(df, bulletin_date):
         session.close()
 
 
-# =========================
-# MAIN
-# =========================
 if __name__ == '__main__':
     Base.metadata.create_all(engine)
 
-    # =========================
-    # ЕДИНАЯ SESSION (важно)
-    # =========================
     session = requests.Session()
 
     links = get_bulletin_links(session, start_year=2023)
@@ -245,9 +203,6 @@ if __name__ == '__main__':
         else:
             logger.error(f'Пропускаем {item["date"]} — ошибка скачивания')
 
-    # =========================
-    # Проверка
-    # =========================
     db_session = Session(engine)
 
     count = db_session.query(SpimexTradingResults).count()
