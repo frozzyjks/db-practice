@@ -181,7 +181,7 @@ def save_to_db(df, bulletin_date):
         session.close()
 
 
-if __name__ == '__main__':
+def run():
     Base.metadata.create_all(engine)
 
     session = requests.Session()
@@ -214,3 +214,6 @@ if __name__ == '__main__':
         logger.info(f'Первая запись: {first.exchange_product_id} — {first.date}')
 
     db_session.close()
+
+if __name__ == '__main__':
+    run()

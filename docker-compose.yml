@@ -25,10 +25,25 @@ services:
         condition: service_healthy
     environment:
       DB_NAME: spimex_db
+      DB_HOST: db        # ← внутри Docker сеть, хост = имя сервиса
+      DB_PORT: 5432
+      DB_USER: aqodocu
+      DB_PASS: password
+      PARSER_MODE: sync  # ← выбираем режим
+
+  async_parser:
+    build: .
+    container_name: spimex_async_parser
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_NAME: spimex_db
       DB_HOST: db
       DB_PORT: 5432
       DB_USER: aqodocu
       DB_PASS: password
+      PARSER_MODE: async  # ← выбираем режим
 
 volumes:
   postgres_data:
