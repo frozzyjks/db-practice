@@ -17,6 +17,17 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    image: redis:7
+    container_name: spimex_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   parser:
     build: .
     container_name: spimex_parser
@@ -25,11 +36,11 @@ services:
         condition: service_healthy
     environment:
       DB_NAME: spimex_db
-      DB_HOST: db        # ← внутри Docker сеть, хост = имя сервиса
+      DB_HOST: db
       DB_PORT: 5432
       DB_USER: aqodocu
       DB_PASS: password
-      PARSER_MODE: sync  # ← выбираем режим
+      PARSER_MODE: sync
 
   async_parser:
     build: .
@@ -43,7 +54,28 @@ services:
       DB_PORT: 5432
       DB_USER: aqodocu
       DB_PASS: password
-      PARSER_MODE: async  # ← выбираем режим
+      PARSER_MODE: async
+
+  api:
+    build: .
+    container_name: spimex_api
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      ENV: docker
+      DB_NAME: spimex_db
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: aqodocu
+      DB_PASS: password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "8000:8000"
+    command: [ "uvicorn", "src.task3.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload" ]
 
 volumes:
   postgres_data:

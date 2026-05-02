@@ -19,3 +19,7 @@ env/
 *.pdf
 
 .DS_Store
+
+postgres_data/
+
+dump.rdb
