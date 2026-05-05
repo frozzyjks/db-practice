@@ -5,3 +5,4 @@ asyncpg
 redis
 python-dotenv
 pydantic
+pydantic-settings

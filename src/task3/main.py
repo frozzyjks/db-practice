@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from src.task3.routers.trading import router
+from src.task3.router import router
 
 app = FastAPI(
     title="SPIMEX Trading API",
