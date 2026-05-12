@@ -1,12 +1,13 @@
+from collections.abc import Callable, Awaitable
 from datetime import date
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, Query
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
-import redis.asyncio as aioredis
-from src.task3.cache import get_cached, get_redis, set_cached
+from src.task3.cache import CacheContext, get_redis
 from src.task3.database import get_db
 from src.task3.repository import TradingRepository
-from src.task3.schemas import TradingResult
+
 
 router = APIRouter(prefix="/trading", tags=["Trading"])
 
@@ -17,25 +18,29 @@ def get_repository(
     return TradingRepository(db)
 
 
-async def cached_response(
-    redis: aioredis.Redis,
+async def fetch_cached_response(
+    redis: Redis,
     cache_key: str,
-    fetch_data,
+    data: Any,
     response_key: str = "data",
 ) -> dict[str, Any]:
-    cached = await get_cached(redis, cache_key)
-    if cached is not None:
-        return {response_key: cached, "source": "cache"}
+    async with CacheContext(redis, cache_key) as cache:
+        if cache.data is not None:
+            return {
+                response_key: cache.data,
+                "meta": {"count": len(cache.data)},
+            }
 
-    data = await fetch_data()
+        await cache.set(data)
 
-    await set_cached(redis, cache_key, data)
-
-    return {response_key: data, "source": "db"}
+    return {
+        response_key: data,
+        "meta": {"count": len(data)},
+    }
 
 
 @router.get("/last-dates")
-async def last_trading_dates(
+async def get_last_trading_dates(
     limit: int = Query(
         default=10,
         ge=1,
@@ -43,56 +48,57 @@ async def last_trading_dates(
         description="Количество последних торговых дней",
     ),
     repo: TradingRepository = Depends(get_repository),
-    redis: aioredis.Redis = Depends(get_redis),
+    redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
     cache_key = f"last_dates:{limit}"
 
-    async def fetch() -> list[str]:
-        dates = await repo.get_last_trading_dates(limit)
-        return [str(d) for d in dates]
+    dates = await repo.get_last_trading_dates(limit)
 
-    return await cached_response(redis, cache_key, fetch, response_key="dates")
+    return await fetch_cached_response(redis, cache_key, dates, response_key="dates")
 
 
 @router.get("/dynamics")
-async def dynamics(
+async def calculate_dynamics(
     start_date: date = Query(description="Начало периода (YYYY-MM-DD)"),
     end_date: date = Query(description="Конец периода (YYYY-MM-DD)"),
     oil_id: Optional[str] = Query(default=None, description="Код нефтепродукта (4 символа)"),
     delivery_type_id: Optional[str] = Query(default=None, description="Тип поставки (1 символ)"),
     delivery_basis_id: Optional[str] = Query(default=None, description="Базис поставки (3 символа)"),
     repo: TradingRepository = Depends(get_repository),
-    redis: aioredis.Redis = Depends(get_redis),
+    redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
     cache_key = (
         f"dynamics:{start_date}:{end_date}"
         f":{oil_id}:{delivery_type_id}:{delivery_basis_id}"
     )
 
-    async def fetch() -> list[dict]:
-        trades = await repo.get_dynamics(
-            start_date, end_date, oil_id, delivery_type_id, delivery_basis_id
-        )
-        return [TradingResult.model_validate(t).model_dump(mode="json") for t in trades]
+    trades = await repo.get_dynamics(
+        start_date,
+        end_date,
+        oil_id,
+        delivery_type_id,
+        delivery_basis_id,
+    )
 
-    return await cached_response(redis, cache_key, fetch)
+    return await fetch_cached_response(redis, cache_key, trades)
 
 
 @router.get("/results")
-async def trading_results(
+async def fetch_trading_results(
     oil_id: Optional[str] = Query(default=None, description="Код нефтепродукта"),
     delivery_type_id: Optional[str] = Query(default=None, description="Тип поставки"),
     delivery_basis_id: Optional[str] = Query(default=None, description="Базис поставки"),
     limit: int = Query(default=10, ge=1, le=100, description="Количество записей"),
     repo: TradingRepository = Depends(get_repository),
-    redis: aioredis.Redis = Depends(get_redis),
+    redis: Redis = Depends(get_redis),
 ) -> dict[str, Any]:
     cache_key = f"results:{oil_id}:{delivery_type_id}:{delivery_basis_id}:{limit}"
 
-    async def fetch() -> list[dict]:
-        trades = await repo.get_trading_results(
-            oil_id, delivery_type_id, delivery_basis_id, limit
-        )
-        return [TradingResult.model_validate(t).model_dump(mode="json") for t in trades]
+    trades = await repo.get_trading_results(
+        oil_id,
+        delivery_type_id,
+        delivery_basis_id,
+        limit,
+    )
 
-    return await cached_response(redis, cache_key, fetch)
+    return await fetch_cached_response(redis, cache_key, trades)

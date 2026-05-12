@@ -1,7 +1,8 @@
 import json
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
 from typing import Any, Optional
-import redis.asyncio as aioredis
+from redis.asyncio import Redis
 from src.task3.config import settings
 
 
@@ -15,8 +16,8 @@ def seconds_until_cache_reset() -> int:
     return int((reset_time - now).total_seconds())
 
 
-async def get_redis() -> aioredis.Redis:
-    async with aioredis.Redis(
+async def get_redis() -> AsyncIterator[Redis]:
+    async with Redis(
         host=settings.redis_host,
         port=settings.redis_port,
         decode_responses=True,
@@ -24,23 +25,30 @@ async def get_redis() -> aioredis.Redis:
         yield client
 
 
-async def get_cached(
-    redis: aioredis.Redis,
-    key: str,
-) -> Optional[Any]:
-    value = await redis.get(key)
-    if value:
-        return json.loads(value)
-    return None
+class CacheContext:
 
+    def __init__(self, redis: Redis, key: str) -> None:
+        self.redis = redis
+        self.key = key
+        self.data: Optional[Any] = None
 
-async def set_cached(
-    redis: aioredis.Redis,
-    key: str,
-    data: Any,
-) -> None:
-    ttl = seconds_until_cache_reset()
+    async def __aenter__(self) -> "CacheContext":
+        value = await self.redis.get(self.key)
+        if value is not None:
+            self.data = json.loads(value)
+        return self
 
-    if ttl < 60:
-        return
-    await redis.setex(key, ttl, json.dumps(data, default=str))
+    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
+        pass
+
+    async def set(self, data: Any) -> None:
+        ttl = seconds_until_cache_reset()
+
+        if ttl < 60:
+            return
+
+        await self.redis.setex(
+            self.key,
+            ttl,
+            json.dumps(data, default=str),
+        )

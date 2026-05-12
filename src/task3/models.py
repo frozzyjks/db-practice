@@ -1,4 +1,5 @@
-from datetime import date, datetime
+#from datetime import date, datetime
+import datetime
 from typing import Optional
 
 from sqlalchemy import String
@@ -21,6 +22,6 @@ class SpimexTradingResults(Base):
     volume: Mapped[float] = mapped_column()
     total: Mapped[float] = mapped_column()
     count: Mapped[int] = mapped_column()
-    date: Mapped[date] = mapped_column()
-    created_on: Mapped[Optional[datetime]] = mapped_column(server_default=func.now())
-    updated_on: Mapped[Optional[datetime]] = mapped_column(server_default=func.now(), onupdate=func.now())
+    date: Mapped[datetime.date] = mapped_column()
+    created_on: Mapped[Optional[datetime.datetime]] = mapped_column(server_default=func.now())
+    updated_on: Mapped[Optional[datetime.datetime]] = mapped_column(server_default=func.now(), onupdate=func.now())
