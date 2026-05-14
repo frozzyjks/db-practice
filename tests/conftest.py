@@ -7,14 +7,14 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy import delete
 from sqlalchemy.pool import NullPool
 from src.task3.main import app
-from src.task3.database import Base, get_db
+from src.task3.database import Base, get_db, DATABASE_URL
 from src.task3.config import settings
 from src.task3.models import SpimexTradingResults
 from src.task3.cache import get_redis
+from src.task3.router import get_repository
 
-DATABASE_URL = f"postgresql+asyncpg://{settings.db_user}:{settings.db_pass}@{settings.db_host}:{settings.db_port}/{settings.db_name}"
 engine = create_async_engine(DATABASE_URL, poolclass=NullPool)
-SessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+AsyncSessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
@@ -28,7 +28,7 @@ async def setup_db() -> AsyncGenerator[None, None]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def clean_db(setup_db: None) -> AsyncGenerator[None, None]:
-    async with SessionLocal() as session:
+    async with AsyncSessionFactory() as session:
         await session.execute(delete(SpimexTradingResults))
         await session.commit()
     yield
@@ -37,7 +37,7 @@ async def clean_db(setup_db: None) -> AsyncGenerator[None, None]:
 
 @pytest_asyncio.fixture
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    async with SessionLocal() as session:
+    async with AsyncSessionFactory() as session:
         yield session
 
 
@@ -51,14 +51,23 @@ async def mock_redis() -> AsyncGenerator[AsyncMock, None]:
     yield mock
     app.dependency_overrides.pop(get_redis, None)
 
+@pytest_asyncio.fixture
+async def mock_repo() -> AsyncGenerator[AsyncMock, None]:
+    mock = AsyncMock()
+
+    mock.get_last_trading_dates.return_value = []
+    mock.get_dynamics.return_value = []
+    mock.get_trading_results.return_value = []
+
+    app.dependency_overrides[get_repository] = lambda: mock
+    yield mock
+    app.dependency_overrides.pop(get_repository, None)
+
 
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    app.dependency_overrides[get_db] = lambda: db_session
-
+async def client(mock_redis: AsyncMock, mock_repo: AsyncMock) -> AsyncGenerator[AsyncClient, None]:
     async with AsyncClient(
-            transport=ASGITransport(app=app),
-            base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
     ) as ac:
         yield ac
-    app.dependency_overrides.pop(get_db, None)

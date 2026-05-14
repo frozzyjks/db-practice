@@ -1,6 +1,6 @@
 from collections.abc import Callable, Awaitable
 from datetime import date
-from typing import Any, Optional
+from typing import Any, Optional, TypeVar
 from fastapi import APIRouter, Depends, Query
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,8 @@ from src.task3.repository import TradingRepository
 
 
 router = APIRouter(prefix="/trading", tags=["Trading"])
+
+T = TypeVar("T")
 
 
 def get_repository(
@@ -21,9 +23,9 @@ def get_repository(
 async def fetch_cached_response(
     redis: Redis,
     cache_key: str,
-    data: Any,
+    fetch_data: Callable[[], Awaitable[list[T]]],
     response_key: str = "data",
-) -> dict[str, Any]:
+) -> dict[str, list[T] | dict[str, int]]:
     async with CacheContext(redis, cache_key) as cache:
         if cache.data is not None:
             return {
@@ -31,12 +33,13 @@ async def fetch_cached_response(
                 "meta": {"count": len(cache.data)},
             }
 
+        data = await fetch_data()
         await cache.set(data)
 
-    return {
-        response_key: data,
-        "meta": {"count": len(data)},
-    }
+        return {
+            response_key: data,
+            "meta": {"count": len(data)},
+        }
 
 
 @router.get("/last-dates")
@@ -49,12 +52,15 @@ async def get_last_trading_dates(
     ),
     repo: TradingRepository = Depends(get_repository),
     redis: Redis = Depends(get_redis),
-) -> dict[str, Any]:
+) -> dict[str, list[str] | dict[str, int]]:
     cache_key = f"last_dates:{limit}"
 
-    dates = await repo.get_last_trading_dates(limit)
-
-    return await fetch_cached_response(redis, cache_key, dates, response_key="dates")
+    return await fetch_cached_response(
+        redis=redis,
+        cache_key=cache_key,
+        response_key="dates",
+        fetch_data=lambda: repo.get_last_trading_dates(limit),
+    )
 
 
 @router.get("/dynamics")
@@ -66,21 +72,23 @@ async def calculate_dynamics(
     delivery_basis_id: Optional[str] = Query(default=None, description="Базис поставки (3 символа)"),
     repo: TradingRepository = Depends(get_repository),
     redis: Redis = Depends(get_redis),
-) -> dict[str, Any]:
+) -> dict[str, list[dict] | dict[str, int]]:
     cache_key = (
         f"dynamics:{start_date}:{end_date}"
         f":{oil_id}:{delivery_type_id}:{delivery_basis_id}"
     )
 
-    trades = await repo.get_dynamics(
-        start_date,
-        end_date,
-        oil_id,
-        delivery_type_id,
-        delivery_basis_id,
+    return await fetch_cached_response(
+        redis=redis,
+        cache_key=cache_key,
+        fetch_data=lambda: repo.get_dynamics(
+            start_date,
+            end_date,
+            oil_id,
+            delivery_type_id,
+            delivery_basis_id,
+        )
     )
-
-    return await fetch_cached_response(redis, cache_key, trades)
 
 
 @router.get("/results")
@@ -91,14 +99,16 @@ async def fetch_trading_results(
     limit: int = Query(default=10, ge=1, le=100, description="Количество записей"),
     repo: TradingRepository = Depends(get_repository),
     redis: Redis = Depends(get_redis),
-) -> dict[str, Any]:
+) -> dict[str, list[dict] | dict[str, int]]:
     cache_key = f"results:{oil_id}:{delivery_type_id}:{delivery_basis_id}:{limit}"
 
-    trades = await repo.get_trading_results(
-        oil_id,
-        delivery_type_id,
-        delivery_basis_id,
-        limit,
+    return await fetch_cached_response(
+        redis=redis,
+        cache_key=cache_key,
+        fetch_data=lambda: repo.get_trading_results(
+            oil_id,
+            delivery_type_id,
+            delivery_basis_id,
+            limit,
+        ),
     )
-
-    return await fetch_cached_response(redis, cache_key, trades)

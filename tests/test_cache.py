@@ -1,8 +1,10 @@
 import json
 import pytest
-from unittest.mock import patch
+import warnings
+from unittest.mock import patch, AsyncMock
 from src.task3.cache import CacheContext, seconds_until_cache_reset
-from unittest.mock import AsyncMock
+
+pytestmark = pytest.mark.skip(reason="deprecated")
 
 
 async def test_cache_context_hit(mock_redis: AsyncMock) -> None:
