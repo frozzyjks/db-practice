@@ -17,7 +17,7 @@ engine = create_async_engine(DATABASE_URL, poolclass=NullPool)
 AsyncSessionFactory = async_sessionmaker(engine, expire_on_commit=False)
 
 
-@pytest_asyncio.fixture(scope="session", autouse=True)
+@pytest_asyncio.fixture(scope="session")
 async def setup_db() -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -26,7 +26,7 @@ async def setup_db() -> AsyncGenerator[None, None]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
-@pytest_asyncio.fixture(autouse=True)
+@pytest_asyncio.fixture()
 async def clean_db(setup_db: None) -> AsyncGenerator[None, None]:
     async with AsyncSessionFactory() as session:
         await session.execute(delete(SpimexTradingResults))
@@ -36,7 +36,7 @@ async def clean_db(setup_db: None) -> AsyncGenerator[None, None]:
 
 
 @pytest_asyncio.fixture
-async def db_session() -> AsyncGenerator[AsyncSession, None]:
+async def db_session(clean_db: None) -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionFactory() as session:
         yield session
 
